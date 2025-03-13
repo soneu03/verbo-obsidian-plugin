@@ -14,7 +14,7 @@ Verbo es un plugin para Obsidian que te permite obtener transcripciones de video
 
 ### Método manual
 
-1. Descarga el último release desde la [página de releases](https://github.com/tu-usuario/verbo/releases)
+1. Descarga el último release desde la [página de releases](https://github.com/soneu03/verbo-obsidian-plugin/releases)
 2. Extrae el archivo zip en la carpeta de plugins de Obsidian: `<vault>/.obsidian/plugins/`
 3. Reinicia Obsidian
 4. Habilita el plugin en Configuración > Plugins de comunidad
@@ -49,4 +49,4 @@ Este proyecto está licenciado bajo [MIT License](LICENSE).
 
 ## Soporte
 
-Si encuentras algún problema o tienes sugerencias, por favor [abre un issue](https://github.com/tu-usuario/verbo/issues) en el repositorio.
+Si encuentras algún problema o tienes sugerencias, por favor [abre un issue](https://github.com/soneu03/verbo-obsidian-plugin/issues) en el repositorio.

@@ -7033,7 +7033,7 @@ var VerboPlugin = class extends import_obsidian5.Plugin {
         new VerboModal(this.app, this).open();
       }
     });
-    this.addRibbonIcon("verbo-icon", "Verbo: Transcripci\xF3n de YouTube", () => {
+    this.addRibbonIcon("file-video", "Verbo: Transcripci\xF3n de YouTube", () => {
       new VerboModal(this.app, this).open();
     });
     this.addSettingTab(new VerboSettingTab(this.app, this));

@@ -63,7 +63,7 @@ export default class VerboPlugin extends Plugin {
     });
 
     // Agregar botón en la barra de herramientas del editor
-    this.addRibbonIcon('verbo-icon', 'Verbo: Transcripción de YouTube', () => {
+    this.addRibbonIcon('file-video', 'Verbo: Transcripción de YouTube', () => {
       new VerboModal(this.app, this).open();
     });
 
