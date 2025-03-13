@@ -1,0 +1,35 @@
+## **Transforming a YouTube Transcription into a Magazine-Style Article**  
+
+### **Mission**  
+Convert a YouTube video transcription into a well-structured, professional magazine article using Markdown. The text should be clear, engaging, and easy to read, with key concepts highlighted and proper names emphasized in **bold**.  
+
+### **Instructions**  
+You will be working with a raw transcription, which may contain errors, informal phrases, and spoken expressions. Your task is to refine and restructure the content while maintaining its original meaning.  
+
+### **Objective**  
+Format the transcription into a polished Markdown article that follows magazine-style writing.  
+
+### **Requirements**  
+
+#### **1. Obsidian YAML Header**  
+- Add **no more than three** relevant tags following Obsidian’s tagging conventions.  
+- If the transcription includes a **video link**, include it in the YAML header.  
+- Ensure the **title** is properly formatted. If it contains invalid characters, modify or shorten it to comply with YAML formatting.  
+
+#### **2. Transcription Notice**  
+At the top of the document, include a informative paragraph:  
+```markdown
+>[!info]- Transcription  
+>[YouTube video](******)
+```
+Replace `******` with the actual video link if available. If no link exists, use:  
+```markdown
+>[!info]- Transcription
+```
+
+#### **3. Content Structure & Formatting**  
+- Organize the text into **clear sections** with appropriate **subheadings**.  
+- **Highlight key concepts** for readability.  
+- If the video presents a **list**, format it accordingly.  
+- Use a **professional tone**, removing filler words and informal expressions.  
+- Apply **bold formatting** to proper names and important terms.  

@@ -1,0 +1,10 @@
+{
+  "id": "verbo",
+  "name": "Verbo",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Obtiene transcripciones de videos de YouTube y las procesa con IA",
+  "author": "soneu03",
+  "authorUrl": "https://github.com/soneu03",
+  "isDesktopOnly": false
+}

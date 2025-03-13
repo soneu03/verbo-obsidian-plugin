@@ -1,0 +1,11 @@
+verbo/
+├── main.ts                 # Punto de entrada principal
+├── src/
+│   ├── youtube.ts          # Funciones para obtener transcripciones
+│   ├── ai.ts               # Integración con Gemini AI
+│   ├── settings.ts         # Configuración del plugin
+│   └── ui/
+│       ├── modal.ts        # Modal para ingresar URL y opciones
+│       └── view.ts         # Vista para mostrar resultados
+├── styles.css              # Estilos CSS
+└── ... (archivos de configuración)
