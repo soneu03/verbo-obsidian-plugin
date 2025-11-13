@@ -95,20 +95,77 @@ export async function getTranscript(videoId: string, includeTimestamps: boolean 
   }
 }
 
-export async function getVideoTitle(videoId: string): Promise<string | null> {
+// Add this new interface to store video metadata
+export interface VideoMetadata {
+  id: string;
+  title: string;
+  channelName: string;
+  publishDate: string;
+  description: string;
+  duration: string;
+  viewCount: string;
+}
+
+export async function getVideoMetadata(videoId: string): Promise<VideoMetadata> {
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     
     // Fetch the video page
     const videoPageBody = await request(url);
+    const parsedBody = parse(videoPageBody);
+
+    // Extract title
+    const titleMatch = videoPageBody.match(/<meta\s+name="title"\s+content="([^"]*)">/);
+    const title = titleMatch ? titleMatch[1] : "Unknown Title";
     
-    // Extract title using regex
-    const titleMatch = videoPageBody.match(YOUTUBE_TITLE_REGEX);
-    if (titleMatch) {
-      return titleMatch[1];
-    }
+    // Extract channel name
+    const channelMatch = videoPageBody.match(/<link\s+itemprop="name"\s+content="([^"]*)">/);
+    const channelName = channelMatch ? channelMatch[1] : "Unknown Channel";
     
-    return null;
+    // Extract publish date
+    const dateMatch = videoPageBody.match(/<meta\s+itemprop="datePublished"\s+content="([^"]*)">/);
+    const publishDate = dateMatch ? dateMatch[1] : "Unknown Date";
+    
+    // Extract description
+    const descriptionMatch = videoPageBody.match(/<meta\s+name="description"\s+content="([^"]*)">/);
+    const description = descriptionMatch ? descriptionMatch[1] : "No description available";
+    
+    // Extract duration
+    const durationMatch = videoPageBody.match(/<meta\s+itemprop="duration"\s+content="([^"]*)">/);
+    const duration = durationMatch ? durationMatch[1].replace("PT", "").replace("H", "h ").replace("M", "m ").replace("S", "s") : "Unknown Duration";
+    
+    // Extract view count
+    const viewCountMatch = videoPageBody.match(/<meta\s+itemprop="interactionCount"\s+content="([^"]*)">/);
+    const viewCount = viewCountMatch ? viewCountMatch[1] : "Unknown Views";
+    
+    return {
+      id: videoId,
+      title,
+      channelName,
+      publishDate,
+      description,
+      duration,
+      viewCount
+    };
+  } catch (error) {
+    console.error('Error al obtener metadatos del video:', error);
+    return {
+      id: videoId,
+      title: "Unknown Title",
+      channelName: "Unknown Channel",
+      publishDate: "Unknown Date",
+      description: "No description available",
+      duration: "Unknown Duration",
+      viewCount: "Unknown Views"
+    };
+  }
+}
+
+// Update the existing getVideoTitle function to use the metadata function
+export async function getVideoTitle(videoId: string): Promise<string | null> {
+  try {
+    const metadata = await getVideoMetadata(videoId);
+    return metadata.title;
   } catch (error) {
     console.error('Error al obtener el título del video:', error);
     return null;

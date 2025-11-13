@@ -95,8 +95,9 @@ export class VerboSettingTab extends PluginSettingTab {
     const textArea = new TextAreaComponent(textAreaContainer);
     textArea
       .setValue(selectedPrompt?.content || '')
+      .setDisabled(isPredefined) // Disable editing for predefined prompts
       .onChange(async (value) => {
-        if (selectedPrompt) {
+        if (selectedPrompt && !isPredefined) { // Only allow changes for non-predefined prompts
           selectedPrompt.content = value;
           if (this.plugin.settings.selectedPromptIndex === this.plugin.settings.selectedPromptIndex) {
             this.plugin.settings.defaultPrompt = value;
@@ -177,6 +178,25 @@ export class VerboSettingTab extends PluginSettingTab {
           this.plugin.settings.showOriginalTranscript = value;
           await this.plugin.saveSettings();
         }));
+
+    // Add language selection dropdown
+    new Setting(containerEl)
+      .setName('Idioma de la respuesta')
+      .setDesc('Selecciona el idioma en que deseas recibir la respuesta procesada')
+      .addDropdown(dropdown => {
+        dropdown
+          .addOption('es', 'Español')
+          .addOption('en', 'Inglés')
+          .addOption('fr', 'Francés')
+          .addOption('de', 'Alemán')
+          .addOption('it', 'Italiano')
+          .addOption('pt', 'Portugués')
+          .setValue(this.plugin.settings.responseLanguage || 'es')
+          .onChange(async (value) => {
+            this.plugin.settings.responseLanguage = value;
+            await this.plugin.saveSettings();
+          });
+      });
 
     new Setting(containerEl)
       .setName('Máximo de tokens')

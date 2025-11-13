@@ -1,7 +1,13 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { VerboSettings } from './types';
+import { VideoMetadata } from './youtube';
 
-export async function processTranscriptWithAI(transcript: string, prompt: string, settings: VerboSettings): Promise<string> {
+export async function processTranscriptWithAI(
+  transcript: string, 
+  prompt: string, 
+  settings: VerboSettings,
+  videoMetadata?: VideoMetadata
+): Promise<string> {
   try {
     if (!settings.geminiApiKey) {
       throw new Error('API Key de Google Gemini no configurada');
@@ -22,15 +28,35 @@ export async function processTranscriptWithAI(transcript: string, prompt: string
       }
     });
 
-    // Prepare the prompt with the transcript
-    // Limit transcript size if it's too large to prevent token limit issues
-    let processableTranscript = transcript;
-    if (transcript.length > 25000) {
-      processableTranscript = transcript.substring(0, 25000) + 
-        "\n\n[Transcripción truncada debido a su longitud. Procesa la parte mostrada.]";
+    // Use the transcript as is without length checking
+    const processableTranscript = transcript;
+    
+    // Add language instruction based on user's selection
+    let languageInstruction = '';
+    switch (settings.responseLanguage) {
+      case 'en':
+        languageInstruction = 'Please respond in English.';
+        break;
+      case 'fr':
+        languageInstruction = 'Veuillez répondre en français.';
+        break;
+      case 'de':
+        languageInstruction = 'Bitte antworten Sie auf Deutsch.';
+        break;
+      case 'it':
+        languageInstruction = 'Per favore, rispondi in italiano.';
+        break;
+      case 'pt':
+        languageInstruction = 'Por favor, responda em português.';
+        break;
+      case 'es':
+      default:
+        languageInstruction = 'Por favor, responde en español.';
+        break;
     }
     
-    const fullPrompt = `${prompt}\n\nTranscripción:\n${processableTranscript}`;
+    // Include the language instruction in the prompt
+    const fullPrompt = `${prompt}\n\n${languageInstruction}\n\nTranscripción:\n${processableTranscript}`;
 
     // Generate content
     const result = await model.generateContent(fullPrompt);
@@ -40,6 +66,32 @@ export async function processTranscriptWithAI(transcript: string, prompt: string
     // Check if response seems truncated and add a note
     if (text.endsWith('...') || text.length < 100) {
       text += "\n\n[Nota: La respuesta parece estar truncada debido a limitaciones de tokens.]";
+    }
+    
+    // Add YAML frontmatter with video metadata if available
+    if (videoMetadata) {
+      // Format the date if it exists
+      const formattedDate = videoMetadata.publishDate ? 
+        new Date(videoMetadata.publishDate).toISOString().split('T')[0] : 
+        '';
+      
+      // Create YAML frontmatter
+      const yamlFrontmatter = `---
+title: "${videoMetadata.title?.replace(/"/g, '\\"') || 'Transcripción de YouTube'}"
+channel: "${videoMetadata.channelName?.replace(/"/g, '\\"') || 'Canal desconocido'}"
+date: ${formattedDate}
+link: "https://www.youtube.com/watch?v=${videoMetadata.id}"
+duration: "${videoMetadata.duration || ''}"
+views: "${videoMetadata.viewCount || ''}"
+tags: [youtube, transcripción]
+---
+
+`;
+      
+      // Add frontmatter only if it doesn't already exist
+      if (!text.startsWith('---')) {
+        text = yamlFrontmatter + text;
+      }
     }
     
     return text;

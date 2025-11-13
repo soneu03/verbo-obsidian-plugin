@@ -1,3 +1,5 @@
+import { VideoMetadata } from './youtube';
+
 export interface VerboSettings {
   geminiApiKey: string;
   defaultPrompt: string;
@@ -5,7 +7,8 @@ export interface VerboSettings {
   maxTokens: number;
   selectedPromptIndex: number;
   customPrompts: PromptItem[];
-  showOriginalTranscript: boolean; // New setting for showing/hiding original transcript
+  showOriginalTranscript: boolean;
+  responseLanguage: string; // New setting for response language
 }
 
 export interface PromptItem {
@@ -20,4 +23,5 @@ export interface ProcessedTranscript {
   processed: string;
   videoId: string;
   videoTitle: string | undefined;
+  videoMetadata?: VideoMetadata; // Add this line
 }

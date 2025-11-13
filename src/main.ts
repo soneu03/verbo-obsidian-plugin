@@ -3,37 +3,22 @@ import { VerboSettingTab } from './settings';
 import { VerboModal } from './ui/modal';
 import { VerboSettings, PromptItem } from './types';
 import '../styles.css';
+import { DEFAULT_PROMPTS } from './ui/prompts';
 
-// Predefined prompts
-const PREDEFINED_PROMPTS: PromptItem[] = [
-  {
-    name: "General Use",
-    content: "Resume esta transcripción manteniendo los puntos clave:",
-    isDefault: true,
-    defaultPath: "src/ui/General use prompt.txt"
-  },
-  {
-    name: "TTS-Friendly",
-    content: "Convierte esta transcripción en un formato optimizado para Text-to-Speech:",
-    isDefault: true,
-    defaultPath: "src/ui/To-Speech_prompt.txt"
-  },
-  {
-    name: "Sophisticated Format",
-    content: "Transforma esta transcripción en un documento Markdown profesional y estructurado:",
-    isDefault: true,
-    defaultPath: "src/ui/Sofisticated_prompt.txt"
-  }
-];
-
+// In the DEFAULT_SETTINGS object
 const DEFAULT_SETTINGS: VerboSettings = {
   geminiApiKey: '',
-  defaultPrompt: PREDEFINED_PROMPTS[0].content,
+  defaultPrompt: DEFAULT_PROMPTS.general,
   includeTimestamps: true,
-  maxTokens: 1024,
+  maxTokens: 2048,
   selectedPromptIndex: 0,
-  customPrompts: PREDEFINED_PROMPTS,
-  showOriginalTranscript: true // Default to showing the original transcript
+  customPrompts: [
+      { name: 'Uso General', content: DEFAULT_PROMPTS.general, isDefault: true },
+      { name: 'TTS-Friendly', content: DEFAULT_PROMPTS.tts, isDefault: true },
+      { name: 'Formato Sofisticado', content: DEFAULT_PROMPTS.sophisticated, isDefault: true }
+  ],
+  showOriginalTranscript: true,
+  responseLanguage: 'es' // Default to Spanish
 };
 
 export default class VerboPlugin extends Plugin {
@@ -87,19 +72,31 @@ export default class VerboPlugin extends Plugin {
   ensurePredefinedPrompts() {
     // If no prompts exist, use the predefined ones
     if (!this.settings.customPrompts || this.settings.customPrompts.length === 0) {
-      this.settings.customPrompts = [...PREDEFINED_PROMPTS];
+      this.settings.customPrompts = [
+        { name: 'Uso General', content: DEFAULT_PROMPTS.general, isDefault: true },
+        { name: 'TTS-Friendly', content: DEFAULT_PROMPTS.tts, isDefault: true },
+        { name: 'Formato Sofisticado', content: DEFAULT_PROMPTS.sophisticated, isDefault: true }
+      ];
       return;
     }
     
     // Check if each predefined prompt exists
-    for (const predefined of PREDEFINED_PROMPTS) {
-      const exists = this.settings.customPrompts.some(
-        p => p.isDefault && p.defaultPath === predefined.defaultPath
-      );
+    const predefinedNames = ['Uso General', 'TTS-Friendly', 'Formato Sofisticado'];
+    
+    for (let i = 0; i < predefinedNames.length; i++) {
+      const exists = this.settings.customPrompts.some(p => p.name === predefinedNames[i]);
       
       if (!exists) {
         // Add missing predefined prompt
-        this.settings.customPrompts.push(predefined);
+        const promptContent = i === 0 ? DEFAULT_PROMPTS.general : 
+                             i === 1 ? DEFAULT_PROMPTS.tts : 
+                             DEFAULT_PROMPTS.sophisticated;
+                             
+        this.settings.customPrompts.push({
+          name: predefinedNames[i],
+          content: promptContent,
+          isDefault: true
+        });
       }
     }
   }

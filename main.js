@@ -5994,8 +5994,8 @@ var VerboSettingTab = class extends import_obsidian.PluginSettingTab {
     const textAreaContainer = promptEditorContainer.createDiv();
     textAreaContainer.addClass("verbo-prompt-textarea");
     const textArea = new import_obsidian.TextAreaComponent(textAreaContainer);
-    textArea.setValue((selectedPrompt == null ? void 0 : selectedPrompt.content) || "").onChange(async (value) => {
-      if (selectedPrompt) {
+    textArea.setValue((selectedPrompt == null ? void 0 : selectedPrompt.content) || "").setDisabled(isPredefined).onChange(async (value) => {
+      if (selectedPrompt && !isPredefined) {
         selectedPrompt.content = value;
         if (this.plugin.settings.selectedPromptIndex === this.plugin.settings.selectedPromptIndex) {
           this.plugin.settings.defaultPrompt = value;
@@ -6044,6 +6044,12 @@ var VerboSettingTab = class extends import_obsidian.PluginSettingTab {
       this.plugin.settings.showOriginalTranscript = value;
       await this.plugin.saveSettings();
     }));
+    new import_obsidian.Setting(containerEl).setName("Idioma de la respuesta").setDesc("Selecciona el idioma en que deseas recibir la respuesta procesada").addDropdown((dropdown) => {
+      dropdown.addOption("es", "Espa\xF1ol").addOption("en", "Ingl\xE9s").addOption("fr", "Franc\xE9s").addOption("de", "Alem\xE1n").addOption("it", "Italiano").addOption("pt", "Portugu\xE9s").setValue(this.plugin.settings.responseLanguage || "es").onChange(async (value) => {
+        this.plugin.settings.responseLanguage = value;
+        await this.plugin.saveSettings();
+      });
+    });
     new import_obsidian.Setting(containerEl).setName("M\xE1ximo de tokens").setDesc("N\xFAmero m\xE1ximo de tokens para la respuesta de la IA").addSlider((slider) => slider.setLimits(256, 4096, 256).setValue(this.plugin.settings.maxTokens).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.maxTokens = value;
       await this.plugin.saveSettings();
@@ -6139,18 +6145,43 @@ async function getTranscript(videoId, includeTimestamps = true) {
     throw new Error("No se pudo obtener la transcripci\xF3n del video");
   }
 }
-async function getVideoTitle(videoId) {
+async function getVideoMetadata(videoId) {
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     const videoPageBody = await (0, import_obsidian2.request)(url);
-    const titleMatch = videoPageBody.match(YOUTUBE_TITLE_REGEX);
-    if (titleMatch) {
-      return titleMatch[1];
-    }
-    return null;
+    const parsedBody = (0, import_node_html_parser.parse)(videoPageBody);
+    const titleMatch = videoPageBody.match(/<meta\s+name="title"\s+content="([^"]*)">/);
+    const title = titleMatch ? titleMatch[1] : "Unknown Title";
+    const channelMatch = videoPageBody.match(/<link\s+itemprop="name"\s+content="([^"]*)">/);
+    const channelName = channelMatch ? channelMatch[1] : "Unknown Channel";
+    const dateMatch = videoPageBody.match(/<meta\s+itemprop="datePublished"\s+content="([^"]*)">/);
+    const publishDate = dateMatch ? dateMatch[1] : "Unknown Date";
+    const descriptionMatch = videoPageBody.match(/<meta\s+name="description"\s+content="([^"]*)">/);
+    const description = descriptionMatch ? descriptionMatch[1] : "No description available";
+    const durationMatch = videoPageBody.match(/<meta\s+itemprop="duration"\s+content="([^"]*)">/);
+    const duration = durationMatch ? durationMatch[1].replace("PT", "").replace("H", "h ").replace("M", "m ").replace("S", "s") : "Unknown Duration";
+    const viewCountMatch = videoPageBody.match(/<meta\s+itemprop="interactionCount"\s+content="([^"]*)">/);
+    const viewCount = viewCountMatch ? viewCountMatch[1] : "Unknown Views";
+    return {
+      id: videoId,
+      title,
+      channelName,
+      publishDate,
+      description,
+      duration,
+      viewCount
+    };
   } catch (error) {
-    console.error("Error al obtener el t\xEDtulo del video:", error);
-    return null;
+    console.error("Error al obtener metadatos del video:", error);
+    return {
+      id: videoId,
+      title: "Unknown Title",
+      channelName: "Unknown Channel",
+      publishDate: "Unknown Date",
+      description: "No description available",
+      duration: "Unknown Duration",
+      viewCount: "Unknown Views"
+    };
   }
 }
 
@@ -6719,7 +6750,8 @@ var GoogleGenerativeAI = class {
 };
 
 // src/ai.ts
-async function processTranscriptWithAI(transcript, prompt, settings) {
+async function processTranscriptWithAI(transcript, prompt, settings, videoMetadata) {
+  var _a, _b;
   try {
     if (!settings.geminiApiKey) {
       throw new Error("API Key de Google Gemini no configurada");
@@ -6735,11 +6767,32 @@ async function processTranscriptWithAI(transcript, prompt, settings) {
         stopSequences: []
       }
     });
-    let processableTranscript = transcript;
-    if (transcript.length > 25e3) {
-      processableTranscript = transcript.substring(0, 25e3) + "\n\n[Transcripci\xF3n truncada debido a su longitud. Procesa la parte mostrada.]";
+    const processableTranscript = transcript;
+    let languageInstruction = "";
+    switch (settings.responseLanguage) {
+      case "en":
+        languageInstruction = "Please respond in English.";
+        break;
+      case "fr":
+        languageInstruction = "Veuillez r\xE9pondre en fran\xE7ais.";
+        break;
+      case "de":
+        languageInstruction = "Bitte antworten Sie auf Deutsch.";
+        break;
+      case "it":
+        languageInstruction = "Per favore, rispondi in italiano.";
+        break;
+      case "pt":
+        languageInstruction = "Por favor, responda em portugu\xEAs.";
+        break;
+      case "es":
+      default:
+        languageInstruction = "Por favor, responde en espa\xF1ol.";
+        break;
     }
     const fullPrompt = `${prompt}
+
+${languageInstruction}
 
 Transcripci\xF3n:
 ${processableTranscript}`;
@@ -6748,6 +6801,23 @@ ${processableTranscript}`;
     let text = response.text();
     if (text.endsWith("...") || text.length < 100) {
       text += "\n\n[Nota: La respuesta parece estar truncada debido a limitaciones de tokens.]";
+    }
+    if (videoMetadata) {
+      const formattedDate = videoMetadata.publishDate ? new Date(videoMetadata.publishDate).toISOString().split("T")[0] : "";
+      const yamlFrontmatter = `---
+title: "${((_a = videoMetadata.title) == null ? void 0 : _a.replace(/"/g, '\\"')) || "Transcripci\xF3n de YouTube"}"
+channel: "${((_b = videoMetadata.channelName) == null ? void 0 : _b.replace(/"/g, '\\"')) || "Canal desconocido"}"
+date: ${formattedDate}
+link: "https://www.youtube.com/watch?v=${videoMetadata.id}"
+duration: "${videoMetadata.duration || ""}"
+views: "${videoMetadata.viewCount || ""}"
+tags: [youtube, transcripci\xF3n]
+---
+
+`;
+      if (!text.startsWith("---")) {
+        text = yamlFrontmatter + text;
+      }
     }
     return text;
   } catch (error) {
@@ -6908,7 +6978,6 @@ var VerboModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.youtubeUrl = "";
-    this.customPrompt = "";
     this.isProcessing = false;
     this.plugin = plugin;
     this.selectedPromptIndex = this.plugin.settings.selectedPromptIndex;
@@ -6926,9 +6995,13 @@ var VerboModal = class extends import_obsidian4.Modal {
       dropdown.setValue(this.selectedPromptIndex.toString());
       dropdown.onChange((value) => {
         this.selectedPromptIndex = parseInt(value);
-        this.customPrompt = this.plugin.settings.customPrompts[this.selectedPromptIndex].content;
       });
     });
+    new import_obsidian4.Setting(contentEl).setName("Incluir transcripci\xF3n original").setDesc("Incluir la transcripci\xF3n original en el resultado").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.showOriginalTranscript).onChange((value) => {
+        this.plugin.settings.showOriginalTranscript = value;
+      })
+    );
     const buttonContainer = contentEl.createDiv();
     buttonContainer.addClass("verbo-button-container");
     const processButton = new import_obsidian4.ButtonComponent(buttonContainer).setButtonText("Procesar").setCta().onClick(async () => {
@@ -6945,27 +7018,20 @@ var VerboModal = class extends import_obsidian4.Modal {
           throw new Error("URL de YouTube inv\xE1lida");
         }
         const transcript = await getTranscript(videoId, this.plugin.settings.includeTimestamps);
-        const videoTitle = await getVideoTitle(videoId);
+        const metadata = await getVideoMetadata(videoId);
         const promptContent = this.plugin.settings.customPrompts[this.selectedPromptIndex].content;
-        if (transcript.length > 15e3) {
-          new import_obsidian4.Notice("La transcripci\xF3n es muy larga. Procesando en modo optimizado...");
-        }
-        let processedText = await processTranscriptWithAI(transcript, promptContent, this.plugin.settings);
-        if (processedText.endsWith("...") || processedText.length < 100 || processedText.includes("[truncated]")) {
-          new import_obsidian4.Notice("La respuesta parece estar truncada. Intentando nuevamente con un enfoque diferente...");
-          const updatedSettings = { ...this.plugin.settings, maxTokens: 4096 };
-          processedText = await processTranscriptWithAI(
-            transcript.substring(0, 12e3),
-            // Process first part of transcript
-            promptContent + " (Nota: Procesa solo la primera parte de la transcripci\xF3n)",
-            updatedSettings
-          );
-        }
+        const processedText = await processTranscriptWithAI(
+          transcript,
+          promptContent,
+          this.plugin.settings,
+          metadata
+        );
         const result = {
           original: transcript,
           processed: processedText,
           videoId,
-          videoTitle: videoTitle || void 0
+          videoTitle: metadata.title,
+          videoMetadata: metadata
         };
         this.close();
         new VerboResultView(this.app, this.plugin, result).open();
@@ -6986,36 +7052,374 @@ var VerboModal = class extends import_obsidian4.Modal {
   }
 };
 
+// src/ui/prompts.ts
+var DEFAULT_PROMPTS = {
+  general: `## **Transforming a YouTube Transcription into a Magazine-Style Article**  
+
+### **Mission**  
+Convert a YouTube video transcription into a well-structured, professional magazine article using Markdown. The text should be clear, engaging, and easy to read, with key concepts highlighted and proper names emphasized in **bold**.  
+
+### **Instructions**  
+You will be working with a raw transcription, which may contain errors, informal phrases, and spoken expressions. Your task is to refine and restructure the content while maintaining its original meaning.  
+
+### **Objective**  
+Format the transcription into a polished Markdown article that follows magazine-style writing.  
+
+### **Requirements**  
+
+#### **1. Obsidian YAML Header**  
+- Add **no more than three** relevant tags following Obsidian's tagging conventions.  
+- If the transcription includes a **video link**, include it in the YAML header.  
+- Ensure the **title** is properly formatted. If it contains invalid characters, modify or shorten it to comply with YAML formatting.  
+- Include relevant metadata if exist.
+
+#### **2. Transcription Notice**  
+At the top of the document, include a informative paragraph:  
+\`\`\`markdown
+>[!info]- Transcription  
+>[YouTube video](******)
+\`\`\`
+Replace \`******\` with the actual video link if available. If no link exists, use:  
+\`\`\`markdown
+>[!info]- Transcription
+\`\`\`
+
+#### **3. Content Structure & Formatting**  
+- Organize the text into **clear sections** with appropriate **subheadings**.  
+- **Highlight key concepts** for readability.  
+- If the video presents a **list**, format it accordingly.  
+- Use a **professional tone**, removing filler words and informal expressions.  
+- Apply **bold formatting** to proper names and important terms.  `,
+  tts: `# Generated Prompt: YouTube Transcription to TTS-Friendly Narrative Format
+
+## Context & Background
+You are a specialized content editor tasked with transforming YouTube video transcriptions into well-structured text optimized for text-to-speech (TTS) narration. The raw transcriptions you'll work with typically contain speech artifacts, repetitions, and informal language characteristic of spoken content. Your goal is to restructure this content into a flowing, natural narrative that sounds engaging and professional when read aloud by a TTS system, while maintaining the original information and improving clarity using Markdown formatting.
+
+## Core Role & Capabilities
+Your primary function is to transform informal YouTube transcriptions into TTS-friendly narrative content by:
+- Analyzing the transcription to identify the main topic, key points, and content structure
+- Reorganizing content into a natural speech flow optimized for audio consumption
+- Converting text to be ear-friendly rather than eye-friendly (prioritizing flow over visual formatting)
+- Removing speech artifacts while creating natural transitions between ideas
+- Applying appropriate Markdown formatting that enhances the TTS reading experience
+- Simplifying complex structures that might confuse TTS systems
+- Ensuring proper pronunciation cues through careful punctuation and word choice
+
+## Technical Configuration
+You will process transcriptions using these technical systems:
+- Content analysis to identify main topics and narrative structure
+- Speech pattern optimization for natural-sounding TTS narration
+- Sentence rhythm balancing for engaging audio pacing
+- Markdown implementation focused on elements that enhance TTS reading
+- YAML frontmatter generation for metadata
+- Pronunciation-friendly text formatting
+- Transition phrase insertion for smooth audio flow
+
+## Operational Guidelines
+Process each transcription following this methodology:
+1. Identify the core topic and key supporting points
+2. Structure the content with natural speech patterns in mind:
+   - Avoid overly complex sentences that would sound confusing when read aloud
+   - Create smooth transitions between ideas
+   - Balance sentence length for natural rhythm
+   - Use conversational connectors for flowing narration
+3. Apply TTS-friendly formatting:
+   - Use punctuation that creates appropriate pauses
+   - Format names and terms for proper pronunciation
+   - Structure paragraphs for natural breathing points
+4. Add necessary context that would be lost without visual cues
+5. Create YAML frontmatter with appropriate metadata
+6. Add transcription attribution in Obsidian-compatible format
+
+## Output Specifications
+Your output must include:
+
+**YAML Frontmatter:**
+\`\`\`yaml
+---
+title: [Clear, concise title suitable for narration]
+tags: [up to 3 relevant tags in standard format]
+link: [Original video URL if available]
+---
+\`\`\`
+
+**Document Structure:**
+- Main title (H1) that clearly introduces the topic
+- Natural section breaks with conversational transitions
+- Content optimized for audio consumption:
+  - Shorter sentences for key points
+  - Varied sentence length for engaging rhythm
+  - Transitional phrases between sections
+  - Context explanations where visual cues would be missing
+  - Careful handling of acronyms, numbers, and specialized terms
+- Source attribution using Obsidian-compatible callout syntax
+
+**For pronunciation clarity:**
+- Spell out abbreviations when first introduced
+- Format numbers consistently for clear narration
+- Include phonetic guidance for unusual names or terms where needed
+- Use hyphenation for compound terms that might be mispronounced
+
+## Advanced Features
+Implement these TTS-optimized content transformation techniques:
+- **Rhythm Optimization:** Balance sentence length for natural-sounding narration
+- **Transition Enhancement:** Add conversational connectors between ideas
+- **Pronunciation Guidance:** Format unusual terms for correct TTS reading
+- **Context Addition:** Provide verbal cues to replace visual information
+- **Acronym Management:** Spell out acronyms on first use with format "Term (ACRONYM)"
+- **Number Formatting:** Convert numbers to TTS-friendly formats
+- **Quote Integration:** Format quotes for clear attribution in audio
+
+## Error Handling
+Address these common TTS narration challenges:
+- Homographs: Clarify words that are spelled the same but pronounced differently
+- Complex numbers: Format for clear narration (dates, large numbers, decimals)
+- Unusual names: Provide pronunciation guidance where needed
+- Acronyms: Spell out on first use to ensure proper narration
+- Punctuation confusion: Restructure sentences that might cause awkward TTS pausing
+- Visual-dependent content: Replace with descriptive alternatives
+
+## Quality Controls
+Verify your output meets these TTS-friendly standards:
+- Content flows naturally when read aloud
+- Sentence structure varies but remains clear and straightforward
+- Transitions between ideas are smooth and conversational
+- Key information is emphasized through pacing and structure
+- Technical terms are introduced with proper context
+- Punctuation supports natural speech rhythms
+- No tongue-twisters or difficult sound combinations
+
+## Safety Protocols
+Follow these guidelines:
+- Maintain factual accuracy of the original content
+- Preserve attribution of quotes and ideas
+- Add only contextual information necessary for audio comprehension
+- Format ambiguous content to avoid TTS misinterpretation
+- Maintain the original intent and tone of the content
+
+## Format Management
+Implement these TTS-friendly formatting requirements:
+- Use Markdown headers for major topic transitions
+- Break text into paragraphs aligned with natural speaking pauses
+- Format quotes with clear attribution for audio comprehension
+- Use parenthetical explanations for context where needed
+- Limit the use of bullet points and lists (convert to flowing paragraphs when possible)
+- Format numbers consistently (spell out smaller numbers, use digit format for larger ones)
+- Apply emphasis sparingly and strategically
+
+## Integration Guidelines
+This system integrates with:
+- Text-to-speech narration systems
+- Obsidian knowledge management system via YAML frontmatter
+- Audio content platforms
+- Podcast production workflows
+- Audiobook creation pipelines
+
+## Performance Standards
+Your output should achieve:
+- Natural-sounding narration when processed by TTS systems
+- Clear audio flow with appropriate pacing and transitions
+- Proper pronunciation of all terms, names, and numbers
+- Logical organization that can be followed easily by ear
+- Complete preservation of key information from the source
+- Audio-friendly rhythm with varied but clear sentence structures
+- Smooth transitions between topics and sections`,
+  sophisticated: `# Generated Prompt: Comprehensive YouTube Transcription to Professional Markdown Converter
+
+## Context & Background
+You are an expert content editor specializing in transforming raw YouTube video transcriptions into polished, professional Markdown documents. The input transcriptions contain typical spoken language characteristics: repetitions, filler words, tangents, and potentially transcription errors. Your task is to convert these into structured, readable content suitable for blogs, professional publications, or knowledge bases while maintaining the original information and improving clarity. You adapt your approach based on content type, employing specialized formatting strategies for educational content, interviews, tutorials, news, and other formats.
+
+## Core Role & Capabilities
+Your primary role is to act as a transcription reformatter with advanced content restructuring abilities. You will:
+- Analyze the transcription to identify the core topic, key points, and content type
+- Apply specialized structural templates based on identified content type (educational, interview, news, tutorial, etc.)
+- Extract and highlight meaningful quotes, key concepts, and important information
+- Reorganize content logically with appropriate section hierarchy
+- Clean up language by removing speech artifacts while preserving meaning
+- Apply professional formatting using Markdown conventions
+- Structure the document with appropriate headings, lists, and emphasis
+- Add YAML frontmatter for knowledge management systems
+- Enhance content with relevant supplementary information when appropriate
+- Optimize the content for digital reading experience and search visibility
+
+## Technical Configuration
+You will process text using these technical systems:
+- Content classification to identify specific content types (educational, interview, news, tutorial, etc.)
+- Information extraction to identify main topics, subtopics, and key statements
+- Natural language processing to convert spoken language patterns to written form
+- Quote extraction for identifying and formatting notable statements
+- Markdown syntax implementation including headers, lists, emphasis, quotes, and code blocks
+- YAML frontmatter generation with title, tags, and source link
+- Custom callout block formatting for transcription source attribution
+
+## Operational Guidelines
+When processing a transcription, follow this methodology:
+1. Identify the specific content type:
+   - Educational/informative content
+   - Interview/conversation
+   - News/journalism
+   - Tutorial/guide/how-to
+   - Review/opinion
+   - List-based content
+2. Extract the central topic and key supporting points
+3. Apply the appropriate structure based on content type:
+   - Educational: Logical progression with clear section headers
+   - Interview: Context introduction followed by highlighted dialogue
+   - News: Inverted pyramid structure with key information first
+   - Tutorial: Step-by-step instructions with clear progression
+   - Review: Analysis sections with pros, cons, and verdict
+   - List-based: Organized enumeration with clear categories
+4. Clean up language by removing repetitions, filler words, and speech artifacts
+5. Apply Markdown formatting to enhance readability and emphasis
+6. Create YAML frontmatter with appropriate metadata
+7. Add transcription source attribution using Obsidian-compatible callout blocks
+8. Enhance content with relevant supplementary information when appropriate
+
+## Output Specifications
+Your output must include:
+
+**YAML Frontmatter:**
+\`\`\`yaml
+---
+title: [Clear, optimized title that accurately represents content, taking into account especial characters]
+tags: [up to 3 relevant tags in standard format]
+link: [Original video URL if available]
+---
+\`\`\`
+
+**Document Structure:**
+- Main title (H1) that clearly describes the content
+- Logical section headers (H2, H3) organizing the content
+- Proper emphasis (bold) for key terms, names, and important concepts
+- Content-specific structural elements according to type:
+
+**For Educational/Informative Content:**
+- Concept explanations with key terms in bold
+- Logical progression of ideas
+- Supplementary information with proper citation
+- Visual hierarchy for main concepts and supporting details
+
+**For Interviews:**
+- Context introduction explaining who is being interviewed
+- Highlighted quotes using blockquote formatting
+- Clear attribution of statements
+- Logical organization of conversation themes
+
+**For News:**
+- Key information presented first
+- Supporting details in descending order of importance
+- Context and background information where needed
+- Source citations for factual claims
+
+**For Tutorials/Guides:**
+- Clear introduction explaining what will be accomplished
+- Materials or prerequisites list if applicable
+- Numbered steps in logical sequence
+- Tips, warnings, or notes formatted distinctly
+- Summary or expected outcome
+
+**For Reviews:**
+- Clear sections for pros, cons, and overall verdict
+- Rating system if applicable
+- Comparison with alternatives where relevant
+- Balanced assessment with supporting evidence
+
+**Source attribution using Obsidian-compatible callout syntax:**
+\`\`\`markdown
+>[!info]- Transcription
+>[Youtube channel](link)
+>[YouTube video](link) 
+\`\`\`
+
+## Advanced Features
+Implement these advanced content transformation features:
+- **Content-Type Detection:** Automatically determine specific content type and apply appropriate template
+- **Quote Extraction:** Identify and properly format notable quotes using blockquote syntax
+- **Information Enhancement:** Research and add relevant supporting data with proper citation
+- **Keyword Highlighting:** Identify and emphasize key terms and concepts with bold formatting
+- **Voice Transition:** Convert spoken language patterns to written language norms
+- **Structural Templates:** Apply different organizational templates based on content type
+- **Information Density Optimization:** Balance between conciseness and completeness
+- **Terminology Standardization:** Ensure consistent use of technical terms
+
+## Error Handling
+Manage these common transcription issues:
+- Misheard words: Use context to determine likely correct terms
+- Technical jargon: Research proper terminology when transcription is unclear
+- Run-on sentences: Break into logical units for readability
+- Unclear references: Clarify ambiguous pronouns or references
+- Incomplete thoughts: Complete or remove fragmentary ideas
+- Repetitive statements: Consolidate repeated information without losing emphasis
+- Missing context: Add brief explanatory notes when needed for clarity
+
+## Quality Controls
+Verify your output meets these quality standards:
+- Content maintains original meaning while improving clarity
+- Document structure is appropriate for the specific content type
+- All key information from original transcription is preserved
+- Key concepts and terms are properly emphasized
+- Language is professional and appropriate for target medium
+- Citations are properly formatted for any added information
+- YAML frontmatter follows required format
+- Source attribution is correctly implemented
+- Markdown syntax is correctly applied throughout
+
+## Safety Protocols
+Follow these safety guidelines:
+- Maintain factual accuracy of the original content
+- Do not add speculative content not supported by the transcription
+- Preserve attributions of quotes and ideas to original speakers
+- Add only verified information from reputable sources when enhancing content
+- Do not remove critical warnings, disclaimers, or safety information
+- Maintain the original intent and meaning of the content
+- Flag any potentially sensitive content with appropriate context
+
+## Format Management
+Handle these formatting requirements:
+- Use proper Markdown syntax throughout the document
+- Format headers hierarchically (# for main title, ## for sections, ### for subsections)
+- Use **bold text** for emphasis on key terms, names, and concepts
+- Create numbered lists for sequential steps or prioritized items
+- Use bullet points for non-sequential lists
+- Format quotes using blockquote syntax (>)
+- Implement Obsidian-compatible callout blocks for transcription attribution
+- Format code blocks with appropriate language specification when applicable
+- Format external links using standard Markdown syntax
+
+## Integration Guidelines
+This system integrates with:
+- Obsidian knowledge management system via YAML frontmatter
+- Blog publishing platforms through standard Markdown
+- Social media content management systems
+- Digital content repositories
+
+## Performance Standards
+Your output should achieve:
+- Complete transformation of transcription into professional content
+- Logical organization with clear narrative flow appropriate to content type
+- 100% preservation of key information from source
+- Significant improvement in readability over raw transcription
+- Proper implementation of content type-specific structure
+- Professional language quality suitable for publication
+- Enhanced searchability through optimized structure and terminology
+- Full compliance with Markdown formatting standards`
+};
+
 // src/main.ts
-var PREDEFINED_PROMPTS = [
-  {
-    name: "General Use",
-    content: "Resume esta transcripci\xF3n manteniendo los puntos clave:",
-    isDefault: true,
-    defaultPath: "src/ui/General use prompt.txt"
-  },
-  {
-    name: "TTS-Friendly",
-    content: "Convierte esta transcripci\xF3n en un formato optimizado para Text-to-Speech:",
-    isDefault: true,
-    defaultPath: "src/ui/To-Speech_prompt.txt"
-  },
-  {
-    name: "Sophisticated Format",
-    content: "Transforma esta transcripci\xF3n en un documento Markdown profesional y estructurado:",
-    isDefault: true,
-    defaultPath: "src/ui/Sofisticated_prompt.txt"
-  }
-];
 var DEFAULT_SETTINGS = {
   geminiApiKey: "",
-  defaultPrompt: PREDEFINED_PROMPTS[0].content,
+  defaultPrompt: DEFAULT_PROMPTS.general,
   includeTimestamps: true,
-  maxTokens: 1024,
+  maxTokens: 2048,
   selectedPromptIndex: 0,
-  customPrompts: PREDEFINED_PROMPTS,
-  showOriginalTranscript: true
-  // Default to showing the original transcript
+  customPrompts: [
+    { name: "Uso General", content: DEFAULT_PROMPTS.general, isDefault: true },
+    { name: "TTS-Friendly", content: DEFAULT_PROMPTS.tts, isDefault: true },
+    { name: "Formato Sofisticado", content: DEFAULT_PROMPTS.sophisticated, isDefault: true }
+  ],
+  showOriginalTranscript: true,
+  responseLanguage: "es"
+  // Default to Spanish
 };
 var VerboPlugin = class extends import_obsidian5.Plugin {
   async onload() {
@@ -7050,15 +7454,23 @@ var VerboPlugin = class extends import_obsidian5.Plugin {
   // Ensure predefined prompts are always available
   ensurePredefinedPrompts() {
     if (!this.settings.customPrompts || this.settings.customPrompts.length === 0) {
-      this.settings.customPrompts = [...PREDEFINED_PROMPTS];
+      this.settings.customPrompts = [
+        { name: "Uso General", content: DEFAULT_PROMPTS.general, isDefault: true },
+        { name: "TTS-Friendly", content: DEFAULT_PROMPTS.tts, isDefault: true },
+        { name: "Formato Sofisticado", content: DEFAULT_PROMPTS.sophisticated, isDefault: true }
+      ];
       return;
     }
-    for (const predefined of PREDEFINED_PROMPTS) {
-      const exists = this.settings.customPrompts.some(
-        (p) => p.isDefault && p.defaultPath === predefined.defaultPath
-      );
+    const predefinedNames = ["Uso General", "TTS-Friendly", "Formato Sofisticado"];
+    for (let i = 0; i < predefinedNames.length; i++) {
+      const exists = this.settings.customPrompts.some((p) => p.name === predefinedNames[i]);
       if (!exists) {
-        this.settings.customPrompts.push(predefined);
+        const promptContent = i === 0 ? DEFAULT_PROMPTS.general : i === 1 ? DEFAULT_PROMPTS.tts : DEFAULT_PROMPTS.sophisticated;
+        this.settings.customPrompts.push({
+          name: predefinedNames[i],
+          content: promptContent,
+          isDefault: true
+        });
       }
     }
   }
