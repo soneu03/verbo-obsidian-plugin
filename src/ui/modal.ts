@@ -84,11 +84,25 @@ export class VerboModal extends Modal {
             throw new Error('URL de YouTube inválida');
           }
 
+          console.log(`[Verbo Modal] Fetching transcript for video ID: ${videoId}`);
           const transcript = await getTranscript(videoId, this.plugin.settings.includeTimestamps);
+          
+          // Validate transcript locally before proceeding
+          if (!transcript || transcript.trim().length === 0) {
+            new Notice('⚠️ Transcripción vacía: el video no tiene subtítulos disponibles o no pudieron ser extraídos.');
+            processButton.setButtonText('Procesar').setDisabled(false);
+            this.isProcessing = false;
+            return;
+          }
+          
+          console.log(`[Verbo Modal] Transcript fetched successfully (${transcript.length} chars). Preview: ${transcript.slice(0, 100).replace(/\n/g, '␤')}`);
+          
           const metadata = await getVideoMetadata(videoId);
           
           // Use the selected prompt from the dropdown
           const promptContent = this.plugin.settings.customPrompts[this.selectedPromptIndex].content;
+          
+          console.log(`[Verbo Modal] Sending to AI processor with prompt: ${this.plugin.settings.customPrompts[this.selectedPromptIndex].name}`);
           
           // Pass the metadata to the AI processing function
           const processedText = await processTranscriptWithAI(

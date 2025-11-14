@@ -6091,6 +6091,145 @@ var import_obsidian4 = require("obsidian");
 // src/youtube.ts
 var import_obsidian2 = require("obsidian");
 var import_node_html_parser = __toESM(require_dist());
+
+// node_modules/youtube-transcript/dist/youtube-transcript.esm.js
+function __awaiter(thisArg, _arguments, P, generator) {
+  function adopt(value) {
+    return value instanceof P ? value : new P(function(resolve) {
+      resolve(value);
+    });
+  }
+  return new (P || (P = Promise))(function(resolve, reject) {
+    function fulfilled(value) {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+    function rejected(value) {
+      try {
+        step(generator["throw"](value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+    function step(result) {
+      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    }
+    step((generator = generator.apply(thisArg, _arguments || [])).next());
+  });
+}
+var RE_YOUTUBE = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+var USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36,gzip(gfe)";
+var RE_XML_TRANSCRIPT = /<text start="([^"]*)" dur="([^"]*)">([^<]*)<\/text>/g;
+var YoutubeTranscriptError = class extends Error {
+  constructor(message) {
+    super(`[YoutubeTranscript] \u{1F6A8} ${message}`);
+  }
+};
+var YoutubeTranscriptTooManyRequestError = class extends YoutubeTranscriptError {
+  constructor() {
+    super("YouTube is receiving too many requests from this IP and now requires solving a captcha to continue");
+  }
+};
+var YoutubeTranscriptVideoUnavailableError = class extends YoutubeTranscriptError {
+  constructor(videoId) {
+    super(`The video is no longer available (${videoId})`);
+  }
+};
+var YoutubeTranscriptDisabledError = class extends YoutubeTranscriptError {
+  constructor(videoId) {
+    super(`Transcript is disabled on this video (${videoId})`);
+  }
+};
+var YoutubeTranscriptNotAvailableError = class extends YoutubeTranscriptError {
+  constructor(videoId) {
+    super(`No transcripts are available for this video (${videoId})`);
+  }
+};
+var YoutubeTranscriptNotAvailableLanguageError = class extends YoutubeTranscriptError {
+  constructor(lang, availableLangs, videoId) {
+    super(`No transcripts are available in ${lang} this video (${videoId}). Available languages: ${availableLangs.join(", ")}`);
+  }
+};
+var YoutubeTranscript = class {
+  /**
+   * Fetch transcript from YTB Video
+   * @param videoId Video url or video identifier
+   * @param config Get transcript in a specific language ISO
+   */
+  static fetchTranscript(videoId, config) {
+    var _a;
+    return __awaiter(this, void 0, void 0, function* () {
+      const identifier = this.retrieveVideoId(videoId);
+      const videoPageResponse = yield fetch(`https://www.youtube.com/watch?v=${identifier}`, {
+        headers: Object.assign(Object.assign({}, (config === null || config === void 0 ? void 0 : config.lang) && { "Accept-Language": config.lang }), { "User-Agent": USER_AGENT })
+      });
+      const videoPageBody = yield videoPageResponse.text();
+      const splittedHTML = videoPageBody.split('"captions":');
+      if (splittedHTML.length <= 1) {
+        if (videoPageBody.includes('class="g-recaptcha"')) {
+          throw new YoutubeTranscriptTooManyRequestError();
+        }
+        if (!videoPageBody.includes('"playabilityStatus":')) {
+          throw new YoutubeTranscriptVideoUnavailableError(videoId);
+        }
+        throw new YoutubeTranscriptDisabledError(videoId);
+      }
+      const captions = (_a = (() => {
+        try {
+          return JSON.parse(splittedHTML[1].split(',"videoDetails')[0].replace("\n", ""));
+        } catch (e) {
+          return void 0;
+        }
+      })()) === null || _a === void 0 ? void 0 : _a["playerCaptionsTracklistRenderer"];
+      if (!captions) {
+        throw new YoutubeTranscriptDisabledError(videoId);
+      }
+      if (!("captionTracks" in captions)) {
+        throw new YoutubeTranscriptNotAvailableError(videoId);
+      }
+      if ((config === null || config === void 0 ? void 0 : config.lang) && !captions.captionTracks.some((track) => track.languageCode === (config === null || config === void 0 ? void 0 : config.lang))) {
+        throw new YoutubeTranscriptNotAvailableLanguageError(config === null || config === void 0 ? void 0 : config.lang, captions.captionTracks.map((track) => track.languageCode), videoId);
+      }
+      const transcriptURL = ((config === null || config === void 0 ? void 0 : config.lang) ? captions.captionTracks.find((track) => track.languageCode === (config === null || config === void 0 ? void 0 : config.lang)) : captions.captionTracks[0]).baseUrl;
+      const transcriptResponse = yield fetch(transcriptURL, {
+        headers: Object.assign(Object.assign({}, (config === null || config === void 0 ? void 0 : config.lang) && { "Accept-Language": config.lang }), { "User-Agent": USER_AGENT })
+      });
+      if (!transcriptResponse.ok) {
+        throw new YoutubeTranscriptNotAvailableError(videoId);
+      }
+      const transcriptBody = yield transcriptResponse.text();
+      const results = [...transcriptBody.matchAll(RE_XML_TRANSCRIPT)];
+      return results.map((result) => {
+        var _a2;
+        return {
+          text: result[3],
+          duration: parseFloat(result[2]),
+          offset: parseFloat(result[1]),
+          lang: (_a2 = config === null || config === void 0 ? void 0 : config.lang) !== null && _a2 !== void 0 ? _a2 : captions.captionTracks[0].languageCode
+        };
+      });
+    });
+  }
+  /**
+   * Retrieve video id from url or string
+   * @param videoId video url or video id
+   */
+  static retrieveVideoId(videoId) {
+    if (videoId.length === 11) {
+      return videoId;
+    }
+    const matchId = videoId.match(RE_YOUTUBE);
+    if (matchId && matchId.length) {
+      return matchId[1];
+    }
+    throw new YoutubeTranscriptError("Impossible to retrieve Youtube video ID.");
+  }
+};
+
+// src/youtube.ts
 var YOUTUBE_TITLE_REGEX = new RegExp(
   /<meta\s+name="title"\s+content="([^"]*)">/
 );
@@ -6100,6 +6239,20 @@ async function getVideoId(url) {
   return match ? match[1] : null;
 }
 async function getTranscript(videoId, includeTimestamps = true) {
+  try {
+    console.log(`[Verbo] Attempting native transcript extraction for video ${videoId}`);
+    return await getTranscriptNative(videoId, includeTimestamps);
+  } catch (nativeError) {
+    console.log(`[Verbo] Native extraction failed (${nativeError}). Falling back to youtube-transcript...`);
+    try {
+      return await getTranscriptFallback(videoId, includeTimestamps);
+    } catch (fallbackError) {
+      console.error("[Verbo] Both transcript extraction methods failed:", nativeError, fallbackError);
+      throw new Error("No se pudo obtener la transcripci\xF3n. Verifica que el video tiene subt\xEDtulos disponibles.");
+    }
+  }
+}
+async function getTranscriptNative(videoId, includeTimestamps = true) {
   var _a, _b, _c, _d, _e, _f;
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
@@ -6141,8 +6294,33 @@ async function getTranscript(videoId, includeTimestamps = true) {
     }
     return transcript;
   } catch (error) {
-    console.error("Error al obtener la transcripci\xF3n:", error);
-    throw new Error("No se pudo obtener la transcripci\xF3n del video");
+    console.error("Error al obtener la transcripci\xF3n (m\xE9todo nativo):", error);
+    throw error;
+  }
+}
+async function getTranscriptFallback(videoId, includeTimestamps = true) {
+  try {
+    const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+    if (!transcriptData || transcriptData.length === 0) {
+      throw new Error("youtube-transcript devolvi\xF3 datos vac\xEDos");
+    }
+    let transcript = transcriptData.map((item) => {
+      if (includeTimestamps && item.offset) {
+        const seconds = item.offset / 1e3;
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        const timestamp = `[${minutes}:${remainingSeconds.toString().padStart(2, "0")}]`;
+        return `${timestamp} ${item.text}`;
+      }
+      return item.text;
+    }).join("\n");
+    if (!includeTimestamps) {
+      transcript = transcript.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+    }
+    return transcript;
+  } catch (error) {
+    console.error("Error al obtener la transcripci\xF3n (fallback youtube-transcript):", error);
+    throw error;
   }
 }
 async function getVideoMetadata(videoId) {
@@ -6760,7 +6938,8 @@ async function processTranscriptWithAI(transcript, prompt, settings, videoMetada
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
-        temperature: 0.7,
+        // Lower temperature for more deterministic/output-stable responses
+        temperature: 0.2,
         topK: 40,
         topP: 0.95,
         maxOutputTokens: settings.maxTokens,
@@ -6768,6 +6947,11 @@ async function processTranscriptWithAI(transcript, prompt, settings, videoMetada
       }
     });
     const processableTranscript = transcript;
+    if (!processableTranscript || processableTranscript.trim().length === 0) {
+      console.error("[Verbo] Transcript validation failed: empty or whitespace-only content");
+      throw new Error("Transcripci\xF3n vac\xEDa: no se proporcion\xF3 contenido para procesar. Verifica que el video tiene subt\xEDtulos disponibles.");
+    }
+    console.log(`[Verbo] Processing transcript (${processableTranscript.length} chars) with model gemini-2.5-flash`);
     let languageInstruction = "";
     switch (settings.responseLanguage) {
       case "en":
@@ -6790,12 +6974,16 @@ async function processTranscriptWithAI(transcript, prompt, settings, videoMetada
         languageInstruction = "Por favor, responde en espa\xF1ol.";
         break;
     }
-    const fullPrompt = `${prompt}
-
-${languageInstruction}
-
-Transcripci\xF3n:
-${processableTranscript}`;
+    const fullPrompt = [
+      prompt,
+      languageInstruction,
+      'INSTRUCCIONES: Procesa la transcripci\xF3n que aparece entre las etiquetas "###TRANSCRIPCION_START###" y "###TRANSCRIPCION_END###".',
+      "DEVUELVE SOLO el texto procesado en Markdown. NO repitas ni expliques estas instrucciones ni el prompt.",
+      "###TRANSCRIPCION_START###",
+      processableTranscript,
+      "###TRANSCRIPCION_END###",
+      "RESPUESTA:"
+    ].join("\n\n");
     const result = await model.generateContent(fullPrompt);
     const response = await result.response;
     let text = response.text();
@@ -7017,9 +7205,18 @@ var VerboModal = class extends import_obsidian4.Modal {
         if (!videoId) {
           throw new Error("URL de YouTube inv\xE1lida");
         }
+        console.log(`[Verbo Modal] Fetching transcript for video ID: ${videoId}`);
         const transcript = await getTranscript(videoId, this.plugin.settings.includeTimestamps);
+        if (!transcript || transcript.trim().length === 0) {
+          new import_obsidian4.Notice("\u26A0\uFE0F Transcripci\xF3n vac\xEDa: el video no tiene subt\xEDtulos disponibles o no pudieron ser extra\xEDdos.");
+          processButton.setButtonText("Procesar").setDisabled(false);
+          this.isProcessing = false;
+          return;
+        }
+        console.log(`[Verbo Modal] Transcript fetched successfully (${transcript.length} chars). Preview: ${transcript.slice(0, 100).replace(/\n/g, "\u2424")}`);
         const metadata = await getVideoMetadata(videoId);
         const promptContent = this.plugin.settings.customPrompts[this.selectedPromptIndex].content;
+        console.log(`[Verbo Modal] Sending to AI processor with prompt: ${this.plugin.settings.customPrompts[this.selectedPromptIndex].name}`);
         const processedText = await processTranscriptWithAI(
           transcript,
           promptContent,
@@ -7498,6 +7695,22 @@ var VerboPlugin = class extends import_obsidian5.Plugin {
 
 he/he.js:
   (*! https://mths.be/he v1.2.0 by @mathias | MIT license *)
+
+youtube-transcript/dist/youtube-transcript.esm.js:
+  (*! *****************************************************************************
+  Copyright (c) Microsoft Corporation.
+  
+  Permission to use, copy, modify, and/or distribute this software for any
+  purpose with or without fee is hereby granted.
+  
+  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+  REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+  AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+  INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+  LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+  OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+  PERFORMANCE OF THIS SOFTWARE.
+  ***************************************************************************** *)
 
 @google/generative-ai/dist/index.mjs:
   (**

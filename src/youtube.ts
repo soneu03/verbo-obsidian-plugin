@@ -1,5 +1,6 @@
 import { request } from 'obsidian';
 import { parse } from 'node-html-parser';
+import { YoutubeTranscript } from 'youtube-transcript';
 
 const YOUTUBE_TITLE_REGEX = new RegExp(
   /<meta\s+name="title"\s+content="([^"]*)">/,
@@ -13,6 +14,23 @@ export async function getVideoId(url: string): Promise<string | null> {
 }
 
 export async function getTranscript(videoId: string, includeTimestamps: boolean = true): Promise<string> {
+  try {
+    // Attempt 1: Try custom HTML parsing method (faster if successful)
+    console.log(`[Verbo] Attempting native transcript extraction for video ${videoId}`);
+    return await getTranscriptNative(videoId, includeTimestamps);
+  } catch (nativeError) {
+    // Fallback: Use youtube-transcript package (more reliable)
+    console.log(`[Verbo] Native extraction failed (${nativeError}). Falling back to youtube-transcript...`);
+    try {
+      return await getTranscriptFallback(videoId, includeTimestamps);
+    } catch (fallbackError) {
+      console.error('[Verbo] Both transcript extraction methods failed:', nativeError, fallbackError);
+      throw new Error('No se pudo obtener la transcripción. Verifica que el video tiene subtítulos disponibles.');
+    }
+  }
+}
+
+async function getTranscriptNative(videoId: string, includeTimestamps: boolean = true): Promise<string> {
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     
@@ -90,8 +108,45 @@ export async function getTranscript(videoId: string, includeTimestamps: boolean 
     
     return transcript;
   } catch (error) {
-    console.error('Error al obtener la transcripción:', error);
-    throw new Error('No se pudo obtener la transcripción del video');
+    console.error('Error al obtener la transcripción (método nativo):', error);
+    throw error;
+  }
+}
+
+async function getTranscriptFallback(videoId: string, includeTimestamps: boolean = true): Promise<string> {
+  try {
+    // Use youtube-transcript package as fallback
+    const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+    
+    if (!transcriptData || transcriptData.length === 0) {
+      throw new Error('youtube-transcript devolvió datos vacíos');
+    }
+    
+    let transcript = transcriptData
+      .map((item: any) => {
+        if (includeTimestamps && item.offset) {
+          const seconds = item.offset / 1000;
+          const minutes = Math.floor(seconds / 60);
+          const remainingSeconds = Math.floor(seconds % 60);
+          const timestamp = `[${minutes}:${remainingSeconds.toString().padStart(2, '0')}]`;
+          return `${timestamp} ${item.text}`;
+        }
+        return item.text;
+      })
+      .join('\n');
+    
+    // Clean up line breaks when timestamps are disabled
+    if (!includeTimestamps) {
+      transcript = transcript
+        .replace(/\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    
+    return transcript;
+  } catch (error) {
+    console.error('Error al obtener la transcripción (fallback youtube-transcript):', error);
+    throw error;
   }
 }
 

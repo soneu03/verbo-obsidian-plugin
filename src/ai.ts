@@ -20,7 +20,8 @@ export async function processTranscriptWithAI(
     const model = genAI.getGenerativeModel({ 
       model: "gemini-2.5-flash",
       generationConfig: {
-        temperature: 0.7,
+        // Lower temperature for more deterministic/output-stable responses
+        temperature: 0.2,
         topK: 40,
         topP: 0.95,
         maxOutputTokens: settings.maxTokens,
@@ -30,6 +31,14 @@ export async function processTranscriptWithAI(
 
     // Use the transcript as is without length checking
     const processableTranscript = transcript;
+
+    // Pre-check: Validate that transcript is not empty before calling the model
+    if (!processableTranscript || processableTranscript.trim().length === 0) {
+      console.error('[Verbo] Transcript validation failed: empty or whitespace-only content');
+      throw new Error('Transcripción vacía: no se proporcionó contenido para procesar. Verifica que el video tiene subtítulos disponibles.');
+    }
+
+    console.log(`[Verbo] Processing transcript (${processableTranscript.length} chars) with model gemini-2.5-flash`);
     
     // Add language instruction based on user's selection
     let languageInstruction = '';
@@ -55,8 +64,19 @@ export async function processTranscriptWithAI(
         break;
     }
     
-    // Include the language instruction in the prompt
-    const fullPrompt = `${prompt}\n\n${languageInstruction}\n\nTranscripción:\n${processableTranscript}`;
+    // Include the language instruction in the prompt and make the instruction
+    // explicit so the model processes the transcript between markers and
+    // returns only the processed Markdown text (do not repeat the prompt).
+    const fullPrompt = [
+      prompt,
+      languageInstruction,
+      'INSTRUCCIONES: Procesa la transcripción que aparece entre las etiquetas "###TRANSCRIPCION_START###" y "###TRANSCRIPCION_END###".',
+      'DEVUELVE SOLO el texto procesado en Markdown. NO repitas ni expliques estas instrucciones ni el prompt.',
+      '###TRANSCRIPCION_START###',
+      processableTranscript,
+      '###TRANSCRIPCION_END###',
+      'RESPUESTA:'
+    ].join('\n\n');
 
     // Generate content
     const result = await model.generateContent(fullPrompt);
