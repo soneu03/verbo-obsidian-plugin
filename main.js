@@ -6758,7 +6758,7 @@ async function processTranscriptWithAI(transcript, prompt, settings, videoMetada
     }
     const genAI = new GoogleGenerativeAI(settings.geminiApiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-pro",
+      model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.7,
         topK: 40,
